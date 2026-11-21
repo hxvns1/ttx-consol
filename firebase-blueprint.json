@@ -1,0 +1,791 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Authenticated user sync profile container without raw PII exposure.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Firebase Auth UID of the user owning this profile."
+        },
+        "displayName": {
+          "type": "string",
+          "maxLength": 120,
+          "description": "Display name of the facilitator."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the profile was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of the last profile update."
+        }
+      },
+      "required": ["ownerId", "displayName", "createdAt", "updatedAt"]
+    },
+    "TtxWorkspace": {
+      "title": "TtxWorkspace",
+      "description": "Synchronized Tabletop Exercise scenario state including blocks, dialogues/narratives, SOP items, incident narrative, and played status.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Firebase Auth UID of the workspace owner."
+        },
+        "workspaceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Workspace identifier matching the document ID."
+        },
+        "schemaVersion": {
+          "type": "number",
+          "description": "Integer schema version between 1 and 10."
+        },
+        "blocks": {
+          "type": "array",
+          "description": "Ordered list of communication blocks (max 100)."
+        },
+        "dialogues": {
+          "type": "array",
+          "description": "Ordered list of dialogues and interleaved block narratives (max 500)."
+        },
+        "sopItems": {
+          "type": "array",
+          "description": "Ordered list of emergency SOP unit items (max 200)."
+        },
+        "incidentNarrative": {
+          "type": "object",
+          "description": "Editable Bagian IV incident dynamics narrative object."
+        },
+        "playedIds": {
+          "type": "array",
+          "description": "List of dialogue IDs marked as played (max 500)."
+        },
+        "sopPositions": {
+          "type": "object",
+          "description": "Optional per-phase 0-based slot index positioning the SOP panel among communication blocks (keys: fase-2, fase-3, fase-4, fase-6; integer values 0 to 100)."
+        },
+        "scenarioMeta": {
+          "type": "object",
+          "description": "Optional editable scenario header metadata (unit, title, description, status, callSign, aircraft, route, etaRunway, pob, fuel)."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when workspace was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of the latest workspace update."
+        }
+      },
+      "required": [
+        "ownerId",
+        "workspaceId",
+        "schemaVersion",
+        "blocks",
+        "dialogues",
+        "sopItems",
+        "incidentNarrative",
+        "playedIds",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "AudioAssetMeta": {
+      "title": "AudioAssetMeta",
+      "description": "Metadata document for a dialogue audio file stored in chunked subcollection documents.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Firebase Auth UID of the owner."
+        },
+        "workspaceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Parent workspace document ID."
+        },
+        "dialogueId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Dialogue ID matching the audio document ID."
+        },
+        "fileName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "description": "Original uploaded audio file name."
+        },
+        "mimeType": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "description": "Audio MIME type (e.g. audio/mpeg)."
+        },
+        "size": {
+          "type": "number",
+          "description": "Original binary size in bytes (1 to 10485760)."
+        },
+        "duration": {
+          "type": "number",
+          "description": "Duration in seconds (0 to 7200)."
+        },
+        "chunkCount": {
+          "type": "number",
+          "description": "Number of base64 chunks in the chunks subcollection (1 to 30)."
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Unique revision identifier updated whenever audio is replaced."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when audio metadata was first created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when audio metadata was last updated."
+        }
+      },
+      "required": [
+        "ownerId",
+        "workspaceId",
+        "dialogueId",
+        "fileName",
+        "mimeType",
+        "size",
+        "duration",
+        "chunkCount",
+        "revision",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "AudioChunk": {
+      "title": "AudioChunk",
+      "description": "A single base64-encoded chunk of a dialogue audio file (<= 512KB per document).",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Firebase Auth UID of the owner."
+        },
+        "workspaceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Parent workspace ID."
+        },
+        "dialogueId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Parent dialogue audio document ID."
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Revision matching the parent AudioAssetMeta document."
+        },
+        "index": {
+          "type": "number",
+          "description": "Zero-based chunk index (0 to 29)."
+        },
+        "data": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 524288,
+          "description": "Base64 payload slice for this chunk."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when chunk was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when chunk was last updated."
+        }
+      },
+      "required": [
+        "ownerId",
+        "workspaceId",
+        "dialogueId",
+        "revision",
+        "index",
+        "data",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "WorkspaceSavestate": {
+      "title": "WorkspaceSavestate",
+      "description": "Named full snapshot of the TTX scenario including blocks, dialogues/narratives, SOP items, SOP positions, incident narrative, played IDs, and content-addressed audio asset references.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Firebase Auth UID of the savestate owner."
+        },
+        "workspaceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Parent workspace document ID."
+        },
+        "savestateId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Savestate identifier matching the document ID."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "description": "User-defined label for this savestate (e.g. Versi Original)."
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 300,
+          "description": "Optional short note describing this savestate."
+        },
+        "schemaVersion": {
+          "type": "number",
+          "description": "Integer schema version between 1 and 10."
+        },
+        "blocks": {
+          "type": "array",
+          "description": "Snapshot list of communication blocks (max 100)."
+        },
+        "dialogues": {
+          "type": "array",
+          "description": "Snapshot list of dialogues and interleaved block narratives (max 500)."
+        },
+        "sopItems": {
+          "type": "array",
+          "description": "Snapshot list of emergency SOP unit items (max 200)."
+        },
+        "sopPositions": {
+          "type": "object",
+          "description": "Per-phase 0-based slot index positioning the SOP panel among communication blocks."
+        },
+        "incidentNarrative": {
+          "type": "object",
+          "description": "Snapshot of Bagian IV incident dynamics narrative."
+        },
+        "playedIds": {
+          "type": "array",
+          "description": "Snapshot list of dialogue IDs marked as played (max 500)."
+        },
+        "audioRefs": {
+          "type": "array",
+          "description": "Snapshot list of audio references mapping dialogueId to immutable savestateAudios assetId (max 500)."
+        },
+        "scenarioMeta": {
+          "type": "object",
+          "description": "Optional snapshot of editable scenario header metadata."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when savestate was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when savestate was last updated."
+        }
+      },
+      "required": [
+        "ownerId",
+        "workspaceId",
+        "savestateId",
+        "name",
+        "note",
+        "schemaVersion",
+        "blocks",
+        "dialogues",
+        "sopItems",
+        "sopPositions",
+        "incidentNarrative",
+        "playedIds",
+        "audioRefs",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "SavestateAudioMeta": {
+      "title": "SavestateAudioMeta",
+      "description": "Immutable metadata document for a deduplicated audio vault blob referenced by one or more savestates.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Firebase Auth UID of the owner."
+        },
+        "workspaceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Parent workspace document ID."
+        },
+        "assetId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Unique immutable audio asset ID matching the document ID."
+        },
+        "fileName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "description": "Audio file name."
+        },
+        "mimeType": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "description": "Audio MIME type."
+        },
+        "size": {
+          "type": "number",
+          "description": "Original binary size in bytes (1 to 10485760)."
+        },
+        "duration": {
+          "type": "number",
+          "description": "Duration in seconds (0 to 7200)."
+        },
+        "chunkCount": {
+          "type": "number",
+          "description": "Number of base64 chunks in the chunks subcollection (1 to 30)."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when asset was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when asset was last updated."
+        }
+      },
+      "required": [
+        "ownerId",
+        "workspaceId",
+        "assetId",
+        "fileName",
+        "mimeType",
+        "size",
+        "duration",
+        "chunkCount",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "SavestateAudioChunk": {
+      "title": "SavestateAudioChunk",
+      "description": "A single base64-encoded chunk of an immutable savestate audio vault asset (<= 512KB per document).",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Firebase Auth UID of the owner."
+        },
+        "workspaceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Parent workspace ID."
+        },
+        "assetId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Parent savestate audio asset document ID."
+        },
+        "index": {
+          "type": "number",
+          "description": "Zero-based chunk index (0 to 29)."
+        },
+        "data": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 524288,
+          "description": "Base64 payload slice for this chunk."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when chunk was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when chunk was last updated."
+        }
+      },
+      "required": [
+        "ownerId",
+        "workspaceId",
+        "assetId",
+        "index",
+        "data",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "AdminEntry": {
+      "title": "AdminEntry",
+      "description": "Authorized Google account email granted Admin write privileges over the shared TTX scenario.",
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 128,
+          "pattern": "^[a-z0-9._%+\\-]+@[a-z0-9.\\-]+\\.[a-z]{2,}$",
+          "description": "Lowercase Google account email matching the document ID."
+        },
+        "addedByUid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Firebase Auth UID of the Admin who created this entry."
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 120,
+          "description": "Optional facilitator name or role note."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when admin access was granted."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of the last update."
+        }
+      },
+      "required": ["email", "addedByUid", "note", "createdAt", "updatedAt"]
+    },
+    "SharedTtxWorkspace": {
+      "title": "SharedTtxWorkspace",
+      "description": "Published shared TTX scenario workspace readable by all Users and writable exclusively by verified Admins.",
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Shared workspace identifier (default)."
+        },
+        "updatedByUid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Firebase Auth UID of the Admin who last published an update."
+        },
+        "schemaVersion": {
+          "type": "number",
+          "description": "Integer schema version between 1 and 10."
+        },
+        "blocks": {
+          "type": "array",
+          "description": "Ordered list of communication blocks (max 100)."
+        },
+        "dialogues": {
+          "type": "array",
+          "description": "Ordered list of dialogues and interleaved block narratives (max 500)."
+        },
+        "sopItems": {
+          "type": "array",
+          "description": "Ordered list of emergency SOP unit items (max 200)."
+        },
+        "sopPositions": {
+          "type": "object",
+          "description": "Per-phase 0-based slot index positioning the SOP panel among communication blocks."
+        },
+        "incidentNarrative": {
+          "type": "object",
+          "description": "Editable Bagian IV incident dynamics narrative object."
+        },
+        "scenarioMeta": {
+          "type": "object",
+          "description": "Editable scenario header card metadata."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when shared workspace was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of the latest Admin update."
+        }
+      },
+      "required": [
+        "workspaceId",
+        "updatedByUid",
+        "schemaVersion",
+        "blocks",
+        "dialogues",
+        "sopItems",
+        "sopPositions",
+        "incidentNarrative",
+        "scenarioMeta",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "SharedAudioAssetMeta": {
+      "title": "SharedAudioAssetMeta",
+      "description": "Published audio metadata for a dialogue or narrative readable by all Users and writable exclusively by verified Admins.",
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Parent shared workspace document ID (default)."
+        },
+        "updatedByUid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Firebase Auth UID of the Admin who uploaded or updated this audio."
+        },
+        "dialogueId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Dialogue or narrative ID matching the audio document ID."
+        },
+        "fileName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "description": "Audio file name."
+        },
+        "mimeType": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "description": "Audio MIME type."
+        },
+        "size": {
+          "type": "number",
+          "description": "Original binary size in bytes (1 to 10485760)."
+        },
+        "duration": {
+          "type": "number",
+          "description": "Duration in seconds (0 to 7200)."
+        },
+        "chunkCount": {
+          "type": "number",
+          "description": "Number of base64 chunks in the chunks subcollection (1 to 30)."
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Unique revision identifier updated whenever audio is replaced."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when published audio metadata was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when published audio metadata was last updated."
+        }
+      },
+      "required": [
+        "workspaceId",
+        "updatedByUid",
+        "dialogueId",
+        "fileName",
+        "mimeType",
+        "size",
+        "duration",
+        "chunkCount",
+        "revision",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "SharedAudioChunk": {
+      "title": "SharedAudioChunk",
+      "description": "A single base64-encoded chunk of a published shared audio file (<= 512KB per document).",
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Parent shared workspace ID (default)."
+        },
+        "updatedByUid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Firebase Auth UID of the Admin who wrote this chunk."
+        },
+        "dialogueId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Parent dialogue audio document ID."
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Revision matching the parent SharedAudioAssetMeta document."
+        },
+        "index": {
+          "type": "number",
+          "description": "Zero-based chunk index (0 to 29)."
+        },
+        "data": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 524288,
+          "description": "Base64 payload slice for this chunk."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when chunk was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when chunk was last updated."
+        }
+      },
+      "required": [
+        "workspaceId",
+        "updatedByUid",
+        "dialogueId",
+        "revision",
+        "index",
+        "data",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/admins/{adminId}": {
+      "schema": { "$ref": "#/entities/AdminEntry" },
+      "description": "Registry of Google account emails authorized as Admin (self-check get or Admin read/write)."
+    },
+    "/sharedWorkspaces/{workspaceId}": {
+      "schema": { "$ref": "#/entities/SharedTtxWorkspace" },
+      "description": "Published shared TTX scenario state readable by all Users and writable exclusively by Admins."
+    },
+    "/sharedWorkspaces/{workspaceId}/audios/{audioId}": {
+      "schema": { "$ref": "#/entities/SharedAudioAssetMeta" },
+      "description": "Published metadata records for shared TTX dialogue and narrative audio files."
+    },
+    "/sharedWorkspaces/{workspaceId}/audios/{audioId}/chunks/{chunkId}": {
+      "schema": { "$ref": "#/entities/SharedAudioChunk" },
+      "description": "Chunked base64 slices of published shared TTX audio files."
+    },
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Owner-isolated facilitator profile document."
+    },
+    "/users/{userId}/workspaces/{workspaceId}": {
+      "schema": { "$ref": "#/entities/TtxWorkspace" },
+      "description": "Owner-isolated synchronized TTX scenario workspace state."
+    },
+    "/users/{userId}/workspaces/{workspaceId}/audios/{audioId}": {
+      "schema": { "$ref": "#/entities/AudioAssetMeta" },
+      "description": "Metadata records for synchronized dialogue audio files."
+    },
+    "/users/{userId}/workspaces/{workspaceId}/audios/{audioId}/chunks/{chunkId}": {
+      "schema": { "$ref": "#/entities/AudioChunk" },
+      "description": "Chunked base64 slices of synchronized dialogue audio files."
+    },
+    "/users/{userId}/workspaces/{workspaceId}/savestates/{savestateId}": {
+      "schema": { "$ref": "#/entities/WorkspaceSavestate" },
+      "description": "Named full snapshots of TTX scenarios referencing deduplicated savestate audio assets."
+    },
+    "/users/{userId}/workspaces/{workspaceId}/savestateAudios/{assetId}": {
+      "schema": { "$ref": "#/entities/SavestateAudioMeta" },
+      "description": "Immutable metadata records for deduplicated audio blobs referenced by savestates."
+    },
+    "/users/{userId}/workspaces/{workspaceId}/savestateAudios/{assetId}/chunks/{chunkId}": {
+      "schema": { "$ref": "#/entities/SavestateAudioChunk" },
+      "description": "Chunked base64 slices of deduplicated savestate audio vault blobs."
+    }
+  }
+}

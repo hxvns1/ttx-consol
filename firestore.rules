@@ -1,0 +1,1179 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global Safety Net: Default-deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Primitive Helpers ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isVerified() && request.auth.uid == userId;
+    }
+
+    function isBootstrappedAdmin() {
+      return isVerified() &&
+        request.auth.token.email is string &&
+        request.auth.token.email.lower() == 'rxihvn@gmail.com';
+    }
+
+    function isAdmin() {
+      return isBootstrappedAdmin() || (
+        isVerified() &&
+        request.auth.token.email is string &&
+        exists(/databases/$(database)/documents/admins/$(request.auth.token.email.lower()))
+      );
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidAdminKey(emailId) {
+      return emailId is string &&
+        emailId.size() >= 5 &&
+        emailId.size() <= 128 &&
+        emailId.matches('^[a-z0-9._%+\\-]+@[a-z0-9.\\-]+\\.[a-z]{2,}$');
+    }
+
+    function isValidRevision(rev) {
+      return rev is string && rev.size() >= 1 && rev.size() <= 64 && rev.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // --- Relational Master Gate Helpers ---
+    function userProfileExists(userId) {
+      return get(/databases/$(database)/documents/users/$(userId)).data.ownerId == request.auth.uid;
+    }
+
+    function isWorkspaceOwner(userId, workspaceId) {
+      return get(/databases/$(database)/documents/users/$(userId)/workspaces/$(workspaceId)).data.ownerId == request.auth.uid;
+    }
+
+    function audioExistsAfterOwned(userId, workspaceId, audioId) {
+      return getAfter(/databases/$(database)/documents/users/$(userId)/workspaces/$(workspaceId)/audios/$(audioId)).data.ownerId == request.auth.uid;
+    }
+
+    function savestateAudioExistsAfterOwned(userId, workspaceId, assetId) {
+      return getAfter(/databases/$(database)/documents/users/$(userId)/workspaces/$(workspaceId)/savestateAudios/$(assetId)).data.ownerId == request.auth.uid;
+    }
+
+    function sharedWorkspaceExists(workspaceId) {
+      return get(/databases/$(database)/documents/sharedWorkspaces/$(workspaceId)).data.workspaceId == workspaceId;
+    }
+
+    function sharedAudioExistsAfter(workspaceId, audioId) {
+      return getAfter(/databases/$(database)/documents/sharedWorkspaces/$(workspaceId)/audios/$(audioId)).data.workspaceId == workspaceId;
+    }
+
+    // --- Validation Blueprints ---
+    function isValidAdminEntry(data, adminId) {
+      return data.email is string &&
+        isValidAdminKey(data.email) &&
+        data.email == adminId &&
+        data.addedByUid is string &&
+        isValidId(data.addedByUid) &&
+        data.note is string &&
+        data.note.size() <= 120 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidUserProfile(data, userId) {
+      return data.ownerId is string &&
+        isValidId(data.ownerId) &&
+        data.ownerId == request.auth.uid &&
+        data.ownerId == userId &&
+        data.displayName is string &&
+        data.displayName.size() <= 120 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidIncidentNarrative(n) {
+      return n is map &&
+        n.keys().hasAll(['title', 'time', 'body', 'pageNumber']) &&
+        n.keys().hasOnly(['title', 'time', 'body', 'pageNumber']) &&
+        n.title is string &&
+        n.title.size() >= 1 &&
+        n.title.size() <= 200 &&
+        n.time is string &&
+        n.time.size() <= 100 &&
+        n.body is string &&
+        n.body.size() >= 1 &&
+        n.body.size() <= 8000 &&
+        n.pageNumber is number &&
+        n.pageNumber >= 1 &&
+        n.pageNumber <= 999;
+    }
+
+    function isValidSopPositions(p) {
+      return p is map &&
+        p.keys().hasOnly(['fase-2', 'fase-3', 'fase-4', 'fase-6']) &&
+        (!('fase-2' in p) || (p['fase-2'] is number && p['fase-2'] >= 0 && p['fase-2'] <= 100)) &&
+        (!('fase-3' in p) || (p['fase-3'] is number && p['fase-3'] >= 0 && p['fase-3'] <= 100)) &&
+        (!('fase-4' in p) || (p['fase-4'] is number && p['fase-4'] >= 0 && p['fase-4'] <= 100)) &&
+        (!('fase-6' in p) || (p['fase-6'] is number && p['fase-6'] >= 0 && p['fase-6'] <= 100));
+    }
+
+    function isValidScenarioMeta(m) {
+      return m is map &&
+        m.keys().hasAll([
+          'unit',
+          'title',
+          'description',
+          'status',
+          'callSign',
+          'aircraft',
+          'route',
+          'etaRunway',
+          'pob',
+          'fuel'
+        ]) &&
+        m.keys().hasOnly([
+          'unit',
+          'title',
+          'description',
+          'status',
+          'callSign',
+          'aircraft',
+          'route',
+          'etaRunway',
+          'pob',
+          'fuel'
+        ]) &&
+        m.unit is string &&
+        m.unit.size() >= 1 &&
+        m.unit.size() <= 250 &&
+        m.title is string &&
+        m.title.size() >= 1 &&
+        m.title.size() <= 200 &&
+        m.description is string &&
+        m.description.size() <= 1000 &&
+        m.status is string &&
+        m.status.size() >= 1 &&
+        m.status.size() <= 80 &&
+        m.callSign is string &&
+        m.callSign.size() <= 120 &&
+        m.aircraft is string &&
+        m.aircraft.size() <= 160 &&
+        m.route is string &&
+        m.route.size() <= 200 &&
+        m.etaRunway is string &&
+        m.etaRunway.size() <= 160 &&
+        m.pob is string &&
+        m.pob.size() <= 160 &&
+        m.fuel is string &&
+        m.fuel.size() <= 120;
+    }
+
+    function isValidSharedWorkspace(data, workspaceId) {
+      return data.workspaceId is string &&
+        isValidId(data.workspaceId) &&
+        data.workspaceId == workspaceId &&
+        data.workspaceId == 'default' &&
+        data.updatedByUid is string &&
+        isValidId(data.updatedByUid) &&
+        data.updatedByUid == request.auth.uid &&
+        data.schemaVersion is number &&
+        data.schemaVersion >= 1 &&
+        data.schemaVersion <= 10 &&
+        data.blocks is list &&
+        data.blocks.size() <= 100 &&
+        (data.blocks.size() == 0 || data.blocks[0] is map) &&
+        data.dialogues is list &&
+        data.dialogues.size() <= 500 &&
+        (data.dialogues.size() == 0 || data.dialogues[0] is map) &&
+        data.sopItems is list &&
+        data.sopItems.size() <= 200 &&
+        (data.sopItems.size() == 0 || data.sopItems[0] is map) &&
+        isValidSopPositions(data.sopPositions) &&
+        isValidIncidentNarrative(data.incidentNarrative) &&
+        isValidScenarioMeta(data.scenarioMeta) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidSharedAudioMeta(data, workspaceId, audioId) {
+      return data.workspaceId is string &&
+        isValidId(data.workspaceId) &&
+        data.workspaceId == workspaceId &&
+        data.workspaceId == 'default' &&
+        data.updatedByUid is string &&
+        isValidId(data.updatedByUid) &&
+        data.updatedByUid == request.auth.uid &&
+        data.dialogueId is string &&
+        isValidId(data.dialogueId) &&
+        data.dialogueId == audioId &&
+        data.fileName is string &&
+        data.fileName.size() >= 1 &&
+        data.fileName.size() <= 255 &&
+        data.mimeType is string &&
+        data.mimeType.size() >= 1 &&
+        data.mimeType.size() <= 100 &&
+        data.size is number &&
+        data.size >= 1 &&
+        data.size <= 10485760 &&
+        data.duration is number &&
+        data.duration >= 0 &&
+        data.duration <= 7200 &&
+        data.chunkCount is number &&
+        data.chunkCount >= 1 &&
+        data.chunkCount <= 30 &&
+        isValidRevision(data.revision) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidSharedAudioChunk(data, workspaceId, audioId) {
+      return data.workspaceId is string &&
+        isValidId(data.workspaceId) &&
+        data.workspaceId == workspaceId &&
+        data.workspaceId == 'default' &&
+        data.updatedByUid is string &&
+        isValidId(data.updatedByUid) &&
+        data.updatedByUid == request.auth.uid &&
+        data.dialogueId is string &&
+        isValidId(data.dialogueId) &&
+        data.dialogueId == audioId &&
+        isValidRevision(data.revision) &&
+        data.index is number &&
+        data.index >= 0 &&
+        data.index < 30 &&
+        data.data is string &&
+        data.data.size() >= 1 &&
+        data.data.size() <= 524288 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidWorkspace(data, userId, workspaceId) {
+      return data.ownerId is string &&
+        isValidId(data.ownerId) &&
+        data.ownerId == request.auth.uid &&
+        data.ownerId == userId &&
+        data.workspaceId is string &&
+        isValidId(data.workspaceId) &&
+        data.workspaceId == workspaceId &&
+        data.schemaVersion is number &&
+        data.schemaVersion >= 1 &&
+        data.schemaVersion <= 10 &&
+        data.blocks is list &&
+        data.blocks.size() <= 100 &&
+        (data.blocks.size() == 0 || data.blocks[0] is map) &&
+        data.dialogues is list &&
+        data.dialogues.size() <= 500 &&
+        (data.dialogues.size() == 0 || data.dialogues[0] is map) &&
+        data.sopItems is list &&
+        data.sopItems.size() <= 200 &&
+        (data.sopItems.size() == 0 || data.sopItems[0] is map) &&
+        isValidIncidentNarrative(data.incidentNarrative) &&
+        data.playedIds is list &&
+        data.playedIds.size() <= 500 &&
+        (data.playedIds.size() == 0 || (data.playedIds[0] is string && data.playedIds[0].size() <= 128)) &&
+        (!('sopPositions' in data) || isValidSopPositions(data.sopPositions)) &&
+        (!('scenarioMeta' in data) || isValidScenarioMeta(data.scenarioMeta)) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidAudioMeta(data, userId, workspaceId, audioId) {
+      return data.ownerId is string &&
+        isValidId(data.ownerId) &&
+        data.ownerId == request.auth.uid &&
+        data.ownerId == userId &&
+        data.workspaceId is string &&
+        isValidId(data.workspaceId) &&
+        data.workspaceId == workspaceId &&
+        data.dialogueId is string &&
+        isValidId(data.dialogueId) &&
+        data.dialogueId == audioId &&
+        data.fileName is string &&
+        data.fileName.size() >= 1 &&
+        data.fileName.size() <= 255 &&
+        data.mimeType is string &&
+        data.mimeType.size() >= 1 &&
+        data.mimeType.size() <= 100 &&
+        data.size is number &&
+        data.size >= 1 &&
+        data.size <= 10485760 &&
+        data.duration is number &&
+        data.duration >= 0 &&
+        data.duration <= 7200 &&
+        data.chunkCount is number &&
+        data.chunkCount >= 1 &&
+        data.chunkCount <= 30 &&
+        isValidRevision(data.revision) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidAudioChunk(data, userId, workspaceId, audioId) {
+      return data.ownerId is string &&
+        isValidId(data.ownerId) &&
+        data.ownerId == request.auth.uid &&
+        data.ownerId == userId &&
+        data.workspaceId is string &&
+        isValidId(data.workspaceId) &&
+        data.workspaceId == workspaceId &&
+        data.dialogueId is string &&
+        isValidId(data.dialogueId) &&
+        data.dialogueId == audioId &&
+        isValidRevision(data.revision) &&
+        data.index is number &&
+        data.index >= 0 &&
+        data.index < 30 &&
+        data.data is string &&
+        data.data.size() >= 1 &&
+        data.data.size() <= 524288 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidSavestate(data, userId, workspaceId, savestateId) {
+      return data.ownerId is string &&
+        isValidId(data.ownerId) &&
+        data.ownerId == request.auth.uid &&
+        data.ownerId == userId &&
+        data.workspaceId is string &&
+        isValidId(data.workspaceId) &&
+        data.workspaceId == workspaceId &&
+        data.savestateId is string &&
+        isValidId(data.savestateId) &&
+        data.savestateId == savestateId &&
+        data.name is string &&
+        data.name.size() >= 1 &&
+        data.name.size() <= 120 &&
+        data.note is string &&
+        data.note.size() <= 300 &&
+        data.schemaVersion is number &&
+        data.schemaVersion >= 1 &&
+        data.schemaVersion <= 10 &&
+        data.blocks is list &&
+        data.blocks.size() <= 100 &&
+        (data.blocks.size() == 0 || data.blocks[0] is map) &&
+        data.dialogues is list &&
+        data.dialogues.size() <= 500 &&
+        (data.dialogues.size() == 0 || data.dialogues[0] is map) &&
+        data.sopItems is list &&
+        data.sopItems.size() <= 200 &&
+        (data.sopItems.size() == 0 || data.sopItems[0] is map) &&
+        isValidSopPositions(data.sopPositions) &&
+        isValidIncidentNarrative(data.incidentNarrative) &&
+        data.playedIds is list &&
+        data.playedIds.size() <= 500 &&
+        (data.playedIds.size() == 0 || (data.playedIds[0] is string && data.playedIds[0].size() <= 128)) &&
+        data.audioRefs is list &&
+        data.audioRefs.size() <= 500 &&
+        (data.audioRefs.size() == 0 || data.audioRefs[0] is map) &&
+        (!('scenarioMeta' in data) || isValidScenarioMeta(data.scenarioMeta)) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidSavestateAudioMeta(data, userId, workspaceId, assetId) {
+      return data.ownerId is string &&
+        isValidId(data.ownerId) &&
+        data.ownerId == request.auth.uid &&
+        data.ownerId == userId &&
+        data.workspaceId is string &&
+        isValidId(data.workspaceId) &&
+        data.workspaceId == workspaceId &&
+        data.assetId is string &&
+        isValidId(data.assetId) &&
+        data.assetId == assetId &&
+        data.fileName is string &&
+        data.fileName.size() >= 1 &&
+        data.fileName.size() <= 255 &&
+        data.mimeType is string &&
+        data.mimeType.size() >= 1 &&
+        data.mimeType.size() <= 100 &&
+        data.size is number &&
+        data.size >= 1 &&
+        data.size <= 10485760 &&
+        data.duration is number &&
+        data.duration >= 0 &&
+        data.duration <= 7200 &&
+        data.chunkCount is number &&
+        data.chunkCount >= 1 &&
+        data.chunkCount <= 30 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidSavestateAudioChunk(data, userId, workspaceId, assetId) {
+      return data.ownerId is string &&
+        isValidId(data.ownerId) &&
+        data.ownerId == request.auth.uid &&
+        data.ownerId == userId &&
+        data.workspaceId is string &&
+        isValidId(data.workspaceId) &&
+        data.workspaceId == workspaceId &&
+        data.assetId is string &&
+        isValidId(data.assetId) &&
+        data.assetId == assetId &&
+        data.index is number &&
+        data.index >= 0 &&
+        data.index < 30 &&
+        data.data is string &&
+        data.data.size() >= 1 &&
+        data.data.size() <= 524288 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    // --- Collection Rules ---
+
+    // Authorized Admin Registry (PII isolated: users may only check their own email doc; only Admins can list/write)
+    match /admins/{adminId} {
+      allow get: if isVerified() &&
+        isValidAdminKey(adminId) &&
+        (
+          (request.auth.token.email is string && adminId == request.auth.token.email.lower()) ||
+          isAdmin()
+        );
+
+      allow list: if isAdmin();
+
+      allow create: if isAdmin() &&
+        isValidAdminKey(adminId) &&
+        isValidAdminEntry(incoming(), adminId) &&
+        incoming().addedByUid == request.auth.uid &&
+        incoming().keys().hasAll(['email', 'addedByUid', 'note', 'createdAt', 'updatedAt']) &&
+        incoming().keys().hasOnly(['email', 'addedByUid', 'note', 'createdAt', 'updatedAt']) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isAdmin() &&
+        isValidAdminKey(adminId) &&
+        isValidAdminEntry(incoming(), adminId) &&
+        incoming().email == existing().email &&
+        incoming().addedByUid == existing().addedByUid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['note', 'updatedAt']);
+
+      allow delete: if isAdmin() &&
+        isValidAdminKey(adminId) &&
+        adminId != 'rxihvn@gmail.com' &&
+        existing().email != 'rxihvn@gmail.com';
+    }
+
+    // Shared Published TTX Workspace (Readable by all Users across devices, Writable strictly by verified Admins)
+    match /sharedWorkspaces/{workspaceId} {
+      allow get: if isValidId(workspaceId) &&
+        workspaceId == 'default' &&
+        (resource == null || existing().workspaceId == 'default');
+
+      allow create: if isAdmin() &&
+        isValidId(workspaceId) &&
+        workspaceId == 'default' &&
+        isValidSharedWorkspace(incoming(), workspaceId) &&
+        incoming().keys().hasAll([
+          'workspaceId',
+          'updatedByUid',
+          'schemaVersion',
+          'blocks',
+          'dialogues',
+          'sopItems',
+          'sopPositions',
+          'incidentNarrative',
+          'scenarioMeta',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        incoming().keys().hasOnly([
+          'workspaceId',
+          'updatedByUid',
+          'schemaVersion',
+          'blocks',
+          'dialogues',
+          'sopItems',
+          'sopPositions',
+          'incidentNarrative',
+          'scenarioMeta',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isAdmin() &&
+        isValidId(workspaceId) &&
+        workspaceId == 'default' &&
+        isValidSharedWorkspace(incoming(), workspaceId) &&
+        incoming().workspaceId == existing().workspaceId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          // Action: Sync full published scenario or restore backup / savestate
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'updatedByUid',
+            'blocks',
+            'dialogues',
+            'sopItems',
+            'sopPositions',
+            'incidentNarrative',
+            'scenarioMeta',
+            'schemaVersion',
+            'updatedAt'
+          ]) ||
+          // Action: Update blocks, dialogues, and optional SOP positions
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'updatedByUid',
+            'blocks',
+            'dialogues',
+            'sopPositions',
+            'updatedAt'
+          ]) ||
+          // Action: Update SOP panel positions
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'updatedByUid',
+            'sopPositions',
+            'updatedAt'
+          ]) ||
+          // Action: Update SOP list
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'updatedByUid',
+            'sopItems',
+            'updatedAt'
+          ]) ||
+          // Action: Update Bagian IV incident narrative
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'updatedByUid',
+            'incidentNarrative',
+            'updatedAt'
+          ]) ||
+          // Action: Update scenario header metadata
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'updatedByUid',
+            'scenarioMeta',
+            'updatedAt'
+          ])
+        );
+
+      allow delete: if false;
+
+      match /audios/{audioId} {
+        allow get: if isValidId(workspaceId) &&
+          workspaceId == 'default' &&
+          isValidId(audioId) &&
+          (resource == null || existing().workspaceId == 'default') &&
+          sharedWorkspaceExists(workspaceId);
+
+        allow list: if workspaceId == 'default' &&
+          resource.data.workspaceId == 'default';
+
+        allow create: if isAdmin() &&
+          isValidId(workspaceId) &&
+          workspaceId == 'default' &&
+          isValidId(audioId) &&
+          isValidSharedAudioMeta(incoming(), workspaceId, audioId) &&
+          incoming().keys().hasAll([
+            'workspaceId',
+            'updatedByUid',
+            'dialogueId',
+            'fileName',
+            'mimeType',
+            'size',
+            'duration',
+            'chunkCount',
+            'revision',
+            'createdAt',
+            'updatedAt'
+          ]) &&
+          incoming().keys().hasOnly([
+            'workspaceId',
+            'updatedByUid',
+            'dialogueId',
+            'fileName',
+            'mimeType',
+            'size',
+            'duration',
+            'chunkCount',
+            'revision',
+            'createdAt',
+            'updatedAt'
+          ]) &&
+          incoming().createdAt == request.time &&
+          incoming().updatedAt == request.time &&
+          sharedWorkspaceExists(workspaceId);
+
+        allow update: if isAdmin() &&
+          isValidId(workspaceId) &&
+          workspaceId == 'default' &&
+          isValidId(audioId) &&
+          isValidSharedAudioMeta(incoming(), workspaceId, audioId) &&
+          incoming().workspaceId == existing().workspaceId &&
+          incoming().dialogueId == existing().dialogueId &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().updatedAt == request.time &&
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'updatedByUid',
+            'fileName',
+            'mimeType',
+            'size',
+            'duration',
+            'chunkCount',
+            'revision',
+            'updatedAt'
+          ]) &&
+          sharedWorkspaceExists(workspaceId);
+
+        allow delete: if isAdmin() &&
+          isValidId(workspaceId) &&
+          workspaceId == 'default' &&
+          isValidId(audioId) &&
+          sharedWorkspaceExists(workspaceId);
+
+        match /chunks/{chunkId} {
+          allow get: if isValidId(workspaceId) &&
+            workspaceId == 'default' &&
+            isValidId(audioId) &&
+            isValidId(chunkId) &&
+            (resource == null || existing().workspaceId == 'default') &&
+            sharedWorkspaceExists(workspaceId);
+
+          allow list: if workspaceId == 'default' &&
+            resource.data.workspaceId == 'default';
+
+          allow create: if isAdmin() &&
+            isValidId(workspaceId) &&
+            workspaceId == 'default' &&
+            isValidId(audioId) &&
+            isValidId(chunkId) &&
+            isValidSharedAudioChunk(incoming(), workspaceId, audioId) &&
+            incoming().keys().hasAll([
+              'workspaceId',
+              'updatedByUid',
+              'dialogueId',
+              'revision',
+              'index',
+              'data',
+              'createdAt',
+              'updatedAt'
+            ]) &&
+            incoming().keys().hasOnly([
+              'workspaceId',
+              'updatedByUid',
+              'dialogueId',
+              'revision',
+              'index',
+              'data',
+              'createdAt',
+              'updatedAt'
+            ]) &&
+            incoming().createdAt == request.time &&
+            incoming().updatedAt == request.time &&
+            sharedWorkspaceExists(workspaceId) &&
+            sharedAudioExistsAfter(workspaceId, audioId);
+
+          allow update: if isAdmin() &&
+            isValidId(workspaceId) &&
+            workspaceId == 'default' &&
+            isValidId(audioId) &&
+            isValidId(chunkId) &&
+            isValidSharedAudioChunk(incoming(), workspaceId, audioId) &&
+            incoming().workspaceId == existing().workspaceId &&
+            incoming().dialogueId == existing().dialogueId &&
+            incoming().index == existing().index &&
+            incoming().createdAt == existing().createdAt &&
+            incoming().updatedAt == request.time &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'updatedByUid',
+              'revision',
+              'data',
+              'updatedAt'
+            ]) &&
+            sharedWorkspaceExists(workspaceId) &&
+            sharedAudioExistsAfter(workspaceId, audioId);
+
+          allow delete: if isAdmin() &&
+            isValidId(workspaceId) &&
+            workspaceId == 'default' &&
+            isValidId(audioId) &&
+            isValidId(chunkId) &&
+            sharedWorkspaceExists(workspaceId);
+        }
+      }
+    }
+
+    match /users/{userId} {
+      allow get: if isOwner(userId) &&
+        isValidId(userId) &&
+        (resource == null || existing().ownerId == request.auth.uid);
+
+      allow create: if isOwner(userId) &&
+        isValidId(userId) &&
+        isValidUserProfile(incoming(), userId) &&
+        incoming().keys().hasAll(['ownerId', 'displayName', 'createdAt', 'updatedAt']) &&
+        incoming().keys().hasOnly(['ownerId', 'displayName', 'createdAt', 'updatedAt']) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isOwner(userId) &&
+        isValidId(userId) &&
+        isValidUserProfile(incoming(), userId) &&
+        existing().ownerId == request.auth.uid &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'updatedAt']);
+
+      allow delete: if isOwner(userId) &&
+        isValidId(userId) &&
+        existing().ownerId == request.auth.uid;
+
+      match /workspaces/{workspaceId} {
+        allow get: if isOwner(userId) &&
+          isValidId(userId) &&
+          isValidId(workspaceId) &&
+          (resource == null || existing().ownerId == request.auth.uid) &&
+          userProfileExists(userId);
+
+        allow create: if isOwner(userId) &&
+          isValidId(userId) &&
+          isValidId(workspaceId) &&
+          isValidWorkspace(incoming(), userId, workspaceId) &&
+          incoming().keys().hasAll([
+            'ownerId',
+            'workspaceId',
+            'schemaVersion',
+            'blocks',
+            'dialogues',
+            'sopItems',
+            'incidentNarrative',
+            'playedIds',
+            'createdAt',
+            'updatedAt'
+          ]) &&
+          incoming().keys().hasOnly([
+            'ownerId',
+            'workspaceId',
+            'schemaVersion',
+            'blocks',
+            'dialogues',
+            'sopItems',
+            'incidentNarrative',
+            'playedIds',
+            'sopPositions',
+            'scenarioMeta',
+            'createdAt',
+            'updatedAt'
+          ]) &&
+          incoming().createdAt == request.time &&
+          incoming().updatedAt == request.time &&
+          userProfileExists(userId);
+
+        allow update: if isOwner(userId) &&
+          isValidId(userId) &&
+          isValidId(workspaceId) &&
+          isValidWorkspace(incoming(), userId, workspaceId) &&
+          existing().ownerId == request.auth.uid &&
+          incoming().ownerId == existing().ownerId &&
+          incoming().workspaceId == existing().workspaceId &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().updatedAt == request.time &&
+          (
+            // Action: Sync full scenario or restore backup / savestate
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'blocks',
+              'dialogues',
+              'sopItems',
+              'incidentNarrative',
+              'playedIds',
+              'sopPositions',
+              'scenarioMeta',
+              'schemaVersion',
+              'updatedAt'
+            ]) ||
+            // Action: Update played status
+            incoming().diff(existing()).affectedKeys().hasOnly(['playedIds', 'updatedAt']) ||
+            // Action: Update blocks, dialogues, and optional SOP positions
+            incoming().diff(existing()).affectedKeys().hasOnly(['blocks', 'dialogues', 'sopPositions', 'playedIds', 'updatedAt']) ||
+            // Action: Update SOP panel positions relative to blocks
+            incoming().diff(existing()).affectedKeys().hasOnly(['sopPositions', 'updatedAt']) ||
+            // Action: Update SOP list
+            incoming().diff(existing()).affectedKeys().hasOnly(['sopItems', 'updatedAt']) ||
+            // Action: Update Bagian IV incident narrative
+            incoming().diff(existing()).affectedKeys().hasOnly(['incidentNarrative', 'updatedAt']) ||
+            // Action: Update editable scenario header card metadata
+            incoming().diff(existing()).affectedKeys().hasOnly(['scenarioMeta', 'updatedAt'])
+          ) &&
+          userProfileExists(userId);
+
+        allow delete: if isOwner(userId) &&
+          isValidId(userId) &&
+          isValidId(workspaceId) &&
+          existing().ownerId == request.auth.uid &&
+          userProfileExists(userId);
+
+        match /audios/{audioId} {
+          allow get: if isOwner(userId) &&
+            isValidId(userId) &&
+            isValidId(workspaceId) &&
+            isValidId(audioId) &&
+            (resource == null || existing().ownerId == request.auth.uid) &&
+            isWorkspaceOwner(userId, workspaceId);
+
+          allow list: if isOwner(userId) &&
+            resource.data.ownerId == request.auth.uid;
+
+          allow create: if isOwner(userId) &&
+            isValidId(userId) &&
+            isValidId(workspaceId) &&
+            isValidId(audioId) &&
+            isValidAudioMeta(incoming(), userId, workspaceId, audioId) &&
+            incoming().keys().hasAll([
+              'ownerId',
+              'workspaceId',
+              'dialogueId',
+              'fileName',
+              'mimeType',
+              'size',
+              'duration',
+              'chunkCount',
+              'revision',
+              'createdAt',
+              'updatedAt'
+            ]) &&
+            incoming().keys().hasOnly([
+              'ownerId',
+              'workspaceId',
+              'dialogueId',
+              'fileName',
+              'mimeType',
+              'size',
+              'duration',
+              'chunkCount',
+              'revision',
+              'createdAt',
+              'updatedAt'
+            ]) &&
+            incoming().createdAt == request.time &&
+            incoming().updatedAt == request.time &&
+            isWorkspaceOwner(userId, workspaceId);
+
+          allow update: if isOwner(userId) &&
+            isValidId(userId) &&
+            isValidId(workspaceId) &&
+            isValidId(audioId) &&
+            isValidAudioMeta(incoming(), userId, workspaceId, audioId) &&
+            existing().ownerId == request.auth.uid &&
+            incoming().ownerId == existing().ownerId &&
+            incoming().workspaceId == existing().workspaceId &&
+            incoming().dialogueId == existing().dialogueId &&
+            incoming().createdAt == existing().createdAt &&
+            incoming().updatedAt == request.time &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'fileName',
+              'mimeType',
+              'size',
+              'duration',
+              'chunkCount',
+              'revision',
+              'updatedAt'
+            ]) &&
+            isWorkspaceOwner(userId, workspaceId);
+
+          allow delete: if isOwner(userId) &&
+            isValidId(userId) &&
+            isValidId(workspaceId) &&
+            isValidId(audioId) &&
+            existing().ownerId == request.auth.uid &&
+            isWorkspaceOwner(userId, workspaceId);
+
+          match /chunks/{chunkId} {
+            allow get: if isOwner(userId) &&
+              isValidId(userId) &&
+              isValidId(workspaceId) &&
+              isValidId(audioId) &&
+              isValidId(chunkId) &&
+              (resource == null || existing().ownerId == request.auth.uid) &&
+              isWorkspaceOwner(userId, workspaceId);
+
+            allow list: if isOwner(userId) &&
+              resource.data.ownerId == request.auth.uid;
+
+            allow create: if isOwner(userId) &&
+              isValidId(userId) &&
+              isValidId(workspaceId) &&
+              isValidId(audioId) &&
+              isValidId(chunkId) &&
+              isValidAudioChunk(incoming(), userId, workspaceId, audioId) &&
+              incoming().keys().hasAll([
+                'ownerId',
+                'workspaceId',
+                'dialogueId',
+                'revision',
+                'index',
+                'data',
+                'createdAt',
+                'updatedAt'
+              ]) &&
+              incoming().keys().hasOnly([
+                'ownerId',
+                'workspaceId',
+                'dialogueId',
+                'revision',
+                'index',
+                'data',
+                'createdAt',
+                'updatedAt'
+              ]) &&
+              incoming().createdAt == request.time &&
+              incoming().updatedAt == request.time &&
+              isWorkspaceOwner(userId, workspaceId) &&
+              audioExistsAfterOwned(userId, workspaceId, audioId);
+
+            allow update: if isOwner(userId) &&
+              isValidId(userId) &&
+              isValidId(workspaceId) &&
+              isValidId(audioId) &&
+              isValidId(chunkId) &&
+              isValidAudioChunk(incoming(), userId, workspaceId, audioId) &&
+              existing().ownerId == request.auth.uid &&
+              incoming().ownerId == existing().ownerId &&
+              incoming().workspaceId == existing().workspaceId &&
+              incoming().dialogueId == existing().dialogueId &&
+              incoming().index == existing().index &&
+              incoming().createdAt == existing().createdAt &&
+              incoming().updatedAt == request.time &&
+              incoming().diff(existing()).affectedKeys().hasOnly([
+                'revision',
+                'data',
+                'updatedAt'
+              ]) &&
+              isWorkspaceOwner(userId, workspaceId) &&
+              audioExistsAfterOwned(userId, workspaceId, audioId);
+
+            allow delete: if isOwner(userId) &&
+              isValidId(userId) &&
+              isValidId(workspaceId) &&
+              isValidId(audioId) &&
+              isValidId(chunkId) &&
+              existing().ownerId == request.auth.uid &&
+              isWorkspaceOwner(userId, workspaceId);
+          }
+        }
+
+        match /savestates/{savestateId} {
+          allow get: if isOwner(userId) &&
+            isValidId(userId) &&
+            isValidId(workspaceId) &&
+            isValidId(savestateId) &&
+            (resource == null || existing().ownerId == request.auth.uid) &&
+            isWorkspaceOwner(userId, workspaceId);
+
+          allow list: if isOwner(userId) &&
+            resource.data.ownerId == request.auth.uid;
+
+          allow create: if isOwner(userId) &&
+            isValidId(userId) &&
+            isValidId(workspaceId) &&
+            isValidId(savestateId) &&
+            isValidSavestate(incoming(), userId, workspaceId, savestateId) &&
+            incoming().keys().hasAll([
+              'ownerId',
+              'workspaceId',
+              'savestateId',
+              'name',
+              'note',
+              'schemaVersion',
+              'blocks',
+              'dialogues',
+              'sopItems',
+              'sopPositions',
+              'incidentNarrative',
+              'playedIds',
+              'audioRefs',
+              'createdAt',
+              'updatedAt'
+            ]) &&
+            incoming().keys().hasOnly([
+              'ownerId',
+              'workspaceId',
+              'savestateId',
+              'name',
+              'note',
+              'schemaVersion',
+              'blocks',
+              'dialogues',
+              'sopItems',
+              'sopPositions',
+              'incidentNarrative',
+              'playedIds',
+              'audioRefs',
+              'scenarioMeta',
+              'createdAt',
+              'updatedAt'
+            ]) &&
+            incoming().createdAt == request.time &&
+            incoming().updatedAt == request.time &&
+            isWorkspaceOwner(userId, workspaceId);
+
+          allow update: if isOwner(userId) &&
+            isValidId(userId) &&
+            isValidId(workspaceId) &&
+            isValidId(savestateId) &&
+            isValidSavestate(incoming(), userId, workspaceId, savestateId) &&
+            existing().ownerId == request.auth.uid &&
+            incoming().ownerId == existing().ownerId &&
+            incoming().workspaceId == existing().workspaceId &&
+            incoming().savestateId == existing().savestateId &&
+            incoming().createdAt == existing().createdAt &&
+            incoming().updatedAt == request.time &&
+            (
+              // Action: Rename savestate or update note
+              incoming().diff(existing()).affectedKeys().hasOnly([
+                'name',
+                'note',
+                'updatedAt'
+              ]) ||
+              // Action: Overwrite savestate snapshot with current workspace state
+              incoming().diff(existing()).affectedKeys().hasOnly([
+                'name',
+                'note',
+                'schemaVersion',
+                'blocks',
+                'dialogues',
+                'sopItems',
+                'sopPositions',
+                'incidentNarrative',
+                'playedIds',
+                'audioRefs',
+                'scenarioMeta',
+                'updatedAt'
+              ])
+            ) &&
+            isWorkspaceOwner(userId, workspaceId);
+
+          allow delete: if isOwner(userId) &&
+            isValidId(userId) &&
+            isValidId(workspaceId) &&
+            isValidId(savestateId) &&
+            existing().ownerId == request.auth.uid &&
+            isWorkspaceOwner(userId, workspaceId);
+        }
+
+        match /savestateAudios/{assetId} {
+          allow get: if isOwner(userId) &&
+            isValidId(userId) &&
+            isValidId(workspaceId) &&
+            isValidId(assetId) &&
+            (resource == null || existing().ownerId == request.auth.uid) &&
+            isWorkspaceOwner(userId, workspaceId);
+
+          allow list: if isOwner(userId) &&
+            resource.data.ownerId == request.auth.uid;
+
+          allow create: if isOwner(userId) &&
+            isValidId(userId) &&
+            isValidId(workspaceId) &&
+            isValidId(assetId) &&
+            isValidSavestateAudioMeta(incoming(), userId, workspaceId, assetId) &&
+            incoming().keys().hasAll([
+              'ownerId',
+              'workspaceId',
+              'assetId',
+              'fileName',
+              'mimeType',
+              'size',
+              'duration',
+              'chunkCount',
+              'createdAt',
+              'updatedAt'
+            ]) &&
+            incoming().keys().hasOnly([
+              'ownerId',
+              'workspaceId',
+              'assetId',
+              'fileName',
+              'mimeType',
+              'size',
+              'duration',
+              'chunkCount',
+              'createdAt',
+              'updatedAt'
+            ]) &&
+            incoming().createdAt == request.time &&
+            incoming().updatedAt == request.time &&
+            isWorkspaceOwner(userId, workspaceId);
+
+          allow delete: if isOwner(userId) &&
+            isValidId(userId) &&
+            isValidId(workspaceId) &&
+            isValidId(assetId) &&
+            existing().ownerId == request.auth.uid &&
+            isWorkspaceOwner(userId, workspaceId);
+
+          match /chunks/{chunkId} {
+            allow get: if isOwner(userId) &&
+              isValidId(userId) &&
+              isValidId(workspaceId) &&
+              isValidId(assetId) &&
+              isValidId(chunkId) &&
+              (resource == null || existing().ownerId == request.auth.uid) &&
+              isWorkspaceOwner(userId, workspaceId);
+
+            allow list: if isOwner(userId) &&
+              resource.data.ownerId == request.auth.uid;
+
+            allow create: if isOwner(userId) &&
+              isValidId(userId) &&
+              isValidId(workspaceId) &&
+              isValidId(assetId) &&
+              isValidId(chunkId) &&
+              isValidSavestateAudioChunk(incoming(), userId, workspaceId, assetId) &&
+              incoming().keys().hasAll([
+                'ownerId',
+                'workspaceId',
+                'assetId',
+                'index',
+                'data',
+                'createdAt',
+                'updatedAt'
+              ]) &&
+              incoming().keys().hasOnly([
+                'ownerId',
+                'workspaceId',
+                'assetId',
+                'index',
+                'data',
+                'createdAt',
+                'updatedAt'
+              ]) &&
+              incoming().createdAt == request.time &&
+              incoming().updatedAt == request.time &&
+              isWorkspaceOwner(userId, workspaceId) &&
+              savestateAudioExistsAfterOwned(userId, workspaceId, assetId);
+
+            allow delete: if isOwner(userId) &&
+              isValidId(userId) &&
+              isValidId(workspaceId) &&
+              isValidId(assetId) &&
+              isValidId(chunkId) &&
+              existing().ownerId == request.auth.uid &&
+              isWorkspaceOwner(userId, workspaceId);
+          }
+        }
+      }
+    }
+  }
+}

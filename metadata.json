@@ -1,0 +1,6 @@
+{
+  "name": "Konsol Audio TTX — Bandara Tanjung Api",
+  "description": "Aplikasi web fasilitator Table Top Exercise (TTX) Penanggulangan Keadaan Darurat Penerbangan UPBU Kelas III Tanjung Api Ampana untuk pengunggahan dan pemutaran audio per percakapan skenario.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
